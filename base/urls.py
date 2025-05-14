@@ -8,7 +8,7 @@ urlpatterns = [
     path('login/', views.login_view, name='login_view'),
     path('register/', views.register, name='register'),
     path('logout/', views.logout_view, name='logout_view'),
-    path('api/agriculture-chat/', views.chat_api, name='chat_api'),
+    path('chat/api/', views.chat_api, name='chat_api'),
     path('webinars/', views.webinar_redirect, name='webinars'),
 
 ]

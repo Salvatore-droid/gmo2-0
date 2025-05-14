@@ -43,29 +43,71 @@ def dashboard(request):
     return render(request, 'dashboard.html', context)
 
 
+# agriculture_app/views.py
+from django.shortcuts import render
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+import json
+from .models import ChatMessage, GMOKnowledgeBase
+from .gmo_knowledge import GMO_KNOWLEDGE, get_related_suggestions
 
-
-# Initialize the AI model (agriculture-focused)
-agriculture_qa = pipeline(
-    "question-answering",
-    model="deepset/roberta-base-squad2",
-    tokenizer="deepset/roberta-base-squad2"
-)
-
-AGRICULTURE_KNOWLEDGE = """
-Genetically Modified Organisms (GMOs) are organisms whose genetic material has been altered using genetic engineering techniques. 
-In agriculture, GMO crops are designed to improve yield, enhance nutritional content, drought tolerance, and resistance to pests and diseases. 
-Common GMO crops include corn, soybeans, cotton, and canola. Regulatory agencies like the FDA, EPA, and USDA evaluate GMO safety before approval.
-Organic farming prohibits GMO use, while conventional farming may use them. Farmers should check seed certification and local regulations.
-"""
+def get_gmo_response(user_message, context):
+    """
+    Enhanced response generation with context awareness
+    """
+    # 1. Check knowledge base for direct matches
+    knowledge_match = GMOKnowledgeBase.objects.filter(
+        question_patterns__icontains=user_message.lower()
+    ).order_by('-confidence_score').first()
+    
+    if knowledge_match:
+        return {
+            'answer': knowledge_match.answer,
+            'context': {'last_topic': knowledge_match.topic},
+            'confidence': knowledge_match.confidence_score
+        }
+    
+    # 2. Check our static knowledge base
+    for topic, content in GMO_KNOWLEDGE.items():
+        if topic in user_message.lower():
+            return {
+                'answer': content,
+                'context': {'last_topic': topic},
+                'confidence': 0.9  # High confidence for curated content
+            }
+    
+    # 3. Use NLP for more complex queries (example with OpenAI)
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an agricultural expert specializing in GMO technology."},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.7,
+            max_tokens=200
+        )
+        return {
+            'answer': response.choices[0].message['content'],
+            'context': context,
+            'confidence': 0.8  # Default confidence for generated answers
+        }
+    except Exception:
+        # Fallback response
+        return {
+            'answer': "I'm sorry, I couldn't retrieve information on that GMO topic. Could you try rephrasing?",
+            'context': context,
+            'confidence': 0.3
+        }
 
 @login_required
 def chat_view(request):
     """Render the agriculture chat template"""
-    # Get last 5 messages for the current user
     recent_messages = ChatMessage.objects.filter(user=request.user).order_by('-created_at')[:5]
     return render(request, 'dashboard.html', {
-        'recent_messages': recent_messages
+        'recent_messages': recent_messages,
+        'topics': GMOKnowledgeBase.TOPIC_CHOICES
     })
 
 @csrf_exempt
@@ -76,30 +118,53 @@ def chat_api(request):
         try:
             data = json.loads(request.body)
             user_message = data.get('message', '')
+            context = data.get('context', {})
             
-            # Get AI response
-            result = agriculture_qa(
-                question=user_message,
-                context=AGRICULTURE_KNOWLEDGE,
-                max_answer_len=200
-            )
+            result = get_gmo_response(user_message, context)
             
-            # Save to database
-            ChatMessage.objects.create(
+            chat_msg = ChatMessage.objects.create(
                 user=request.user,
                 message=user_message,
-                response=result['answer']
+                response=result['answer'],
+                context=result['context']
             )
             
             return JsonResponse({
                 'response': result['answer'],
-                'suggestions': [
-                    "GMO regulations in my area",
-                    "How to verify seed authenticity",
-                    "Benefits of GMO corn",
-                    "Non-GMO alternatives"
-                ]
+                'context': result['context'],
+                'message_id': chat_msg.id,
+                'suggestions': get_related_suggestions(result['context'].get('last_topic'))
             })
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+@csrf_exempt
+@login_required
+def feedback_api(request):
+    """Handle user feedback to improve responses"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            message_id = data.get('message_id')
+            is_helpful = data.get('is_helpful')
+            
+            message = ChatMessage.objects.get(id=message_id, user=request.user)
+            message.is_helpful = is_helpful
+            message.save()
+            
+            if is_helpful is not None:
+                knowledge = GMOKnowledgeBase.objects.filter(
+                    answer=message.response
+                ).first()
+                
+                if knowledge:
+                    change = 0.1 if is_helpful else -0.15
+                    knowledge.confidence_score = max(0.1, min(1.0, knowledge.confidence_score + change))
+                    knowledge.save()
+            
+            return JsonResponse({'status': 'success'})
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
     

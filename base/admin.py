@@ -64,47 +64,108 @@ class WebinarAdmin(admin.ModelAdmin):
     list_filter = ('is_active', 'scheduled_time')
     search_fields = ('title', 'description')
     date_hierarchy = 'scheduled_time'
+from django.contrib import admin
+from django.utils.html import format_html
+from .models import ChatMessage, GMOKnowledgeBase
 
 @admin.register(ChatMessage)
 class ChatMessageAdmin(admin.ModelAdmin):
-    # Display fields in list view
-    list_display = ('user', 'truncated_message', 'truncated_response', 
-                   'is_agriculture_related', 'created_at')
-    
-    # Make fields clickable for editing
-    list_display_links = ('user', 'truncated_message')
-    
-    # Add filters
-    list_filter = ('is_agriculture_related', 'created_at', 'user')
-    
-    # Add search functionality
+    list_display = ('user', 'truncated_message', 'truncated_response', 'feedback_indicator', 'created_at')
+    list_filter = ('user', 'is_helpful', 'created_at')
     search_fields = ('message', 'response', 'user__username')
+    readonly_fields = ('created_at',)
+    date_hierarchy = 'created_at'
+    list_per_page = 20
     
-    # Fields to display in edit view
     fieldsets = (
-        (None, {
+        ('Conversation Info', {
             'fields': ('user', 'created_at')
         }),
         ('Message Content', {
-            'fields': ('message', 'response', 'is_agriculture_related'),
-            'classes': ('wide',),
+            'fields': ('message', 'response')
+        }),
+        ('Feedback & Analysis', {
+            'fields': ('is_helpful', 'context'),
+            'classes': ('collapse',)
         }),
     )
     
-    # Make created_at read-only
-    readonly_fields = ('created_at',)
-    
-    # Custom methods for truncated display
     def truncated_message(self, obj):
         return obj.message[:75] + '...' if len(obj.message) > 75 else obj.message
     truncated_message.short_description = 'Message'
     
     def truncated_response(self, obj):
-        return obj.response[:75] + '...' if len(obj.response) > 75 else obj.response
+        return obj.response[:75] + '...' if obj.response and len(obj.response) > 75 else obj.response
     truncated_response.short_description = 'Response'
     
-    # Order by most recent first by default
-    ordering = ('-created_at',)
+    def feedback_indicator(self, obj):
+        if obj.is_helpful is None:
+            return format_html('<span style="color: gray;">━</span> No feedback')
+        elif obj.is_helpful:
+            return format_html('<span style="color: green;">↑</span> Helpful')
+        return format_html('<span style="color: red;">↓</span> Not helpful')
+    feedback_indicator.short_description = 'Feedback'
+
+@admin.register(GMOKnowledgeBase)
+class GMOKnowledgeBaseAdmin(admin.ModelAdmin):
+    list_display = ('topic', 'question_count', 'confidence_score', 'confidence_bar', 'last_updated')  # Added confidence_score here
+    list_filter = ('topic',)
+    search_fields = ('question_patterns', 'answer', 'references')
+    list_editable = ('confidence_score',)  # Now this field exists in list_display
+    list_per_page = 20
+    actions = ['update_confidence', 'export_as_json']
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('topic', 'confidence_score')
+        }),
+        ('Content', {
+            'fields': ('question_patterns', 'answer', 'references')
+        }),
+    )
+    
+    def question_count(self, obj):
+        return len(obj.question_patterns.split('\n'))
+    question_count.short_description = 'Questions'
+    
+    def confidence_bar(self, obj):
+        percent = int(obj.confidence_score * 100)
+        color = 'green' if percent > 70 else 'orange' if percent > 40 else 'red'
+        return format_html(
+            '<div style="background: lightgray; width: 100px; height: 20px; position: relative;">'
+            '<div style="background: {color}; width: {percent}%; height: 100%;"></div>'
+            '<div style="position: absolute; top: 0; left: 0; width: 100%; text-align: center; color: black;">{percent}%</div>'
+            '</div>',
+            color=color, percent=percent
+        )
+    confidence_bar.short_description = 'Confidence'
+    
+    def update_confidence(self, request, queryset):
+        updated = queryset.update(confidence_score=1.0)
+        self.message_user(request, f"Reset confidence for {updated} knowledge items")
+    update_confidence.short_description = "Reset confidence to 100%"
+    
+    def export_as_json(self, request, queryset):
+        import json
+        from django.http import HttpResponse
+        data = []
+        for item in queryset:
+            data.append({
+                'topic': item.topic,
+                'questions': item.question_patterns.split('\n'),
+                'answer': item.answer,
+                'confidence': item.confidence_score
+            })
+        response = HttpResponse(json.dumps(data, indent=2), content_type='application/json')
+        response['Content-Disposition'] = 'attachment; filename=gmo_knowledge_export.json'
+        return response
+    export_as_json.short_description = "Export selected as JSON"
+
+    
+# Optional: Custom admin site header
+admin.site.site_header = "GMO Agricultural Assistant Administration"
+admin.site.site_title = "GMO Knowledge Base"
+admin.site.index_title = "Welcome to GMO Agricultural Assistant Admin"
 
     
 @admin.register(EducationalResource)

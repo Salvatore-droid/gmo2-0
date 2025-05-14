@@ -107,18 +107,37 @@ class Webinar(models.Model):
         return f"{self.title} ({self.scheduled_time})"
 
 
+
+
 class ChatMessage(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     message = models.TextField(null=True)
     response = models.TextField(null=True)
-    is_agriculture_related = models.BooleanField(default=True)
+    context = models.JSONField(default=dict)  # Store conversation context
+    is_helpful = models.BooleanField(null=True)  # User feedback
     created_at = models.DateTimeField(auto_now_add=True)
-
+    
     class Meta:
         ordering = ['-created_at']
 
+class GMOKnowledgeBase(models.Model):
+    TOPIC_CHOICES = [
+        ('science', 'GMO Science'),
+        ('regulations', 'Regulations'),
+        ('crops', 'Specific Crops'),
+        ('verification', 'Product Verification'),
+        ('myths', 'Myths & Facts'),
+    ]
+    
+    topic = models.CharField(max_length=20, choices=TOPIC_CHOICES)
+    question_patterns = models.TextField(help_text="One per line, common question patterns")
+    answer = models.TextField()
+    references = models.TextField(blank=True)
+    last_updated = models.DateTimeField(auto_now=True)
+    confidence_score = models.FloatField(default=1.0)
+    
     def __str__(self):
-        return f"{self.user.username}: {self.message[:50]}"
+        return f"{self.get_topic_display()}: {self.question_patterns[:50]}"
 
 class EducationalResource(models.Model):
     RESOURCE_TYPES = [
