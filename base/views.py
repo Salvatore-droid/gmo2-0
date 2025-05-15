@@ -13,6 +13,7 @@ from .models import Webinar
 from django.views.decorators.csrf import csrf_exempt
 import openai
 from django.views.generic import DetailView
+import requests  
 
 
 
@@ -46,58 +47,104 @@ def dashboard(request):
 
 
 
-# Configure your OpenAI API key (should be in settings)
-openai.api_key = "your_openai_api_key"
+import json
+import requests
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+from .models import ChatMessage  # Your Django model
 
-def get_openai_response(user_message, context):
+def get_deepseek_response(user_message, context):
     """
-    Get response from OpenAI's API using the conversation context
+    Get a response from DeepSeek's API (JSON-safe format).
     """
     try:
-        # Prepare the conversation history
+        # Prepare messages for the API
         messages = [
-            {"role": "system", "content": "You are an expert assistant on GMO (Genetically Modified Organisms) topics. "
-             "Provide accurate, science-based information about GMO science, regulations, crops, and verification. "
-             "If you don't know an answer, say so rather than making up information."}
+            {"role": "system", "content": "You are an expert on GMOs. Provide accurate, science-based answers."},
         ]
         
-        # Add context if available
-        if 'last_topic' in context:
-            messages.append({
-                "role": "assistant", 
-                "content": f"We were previously discussing {context['last_topic']}."
-            })
+        if context.get('last_topic'):
+            messages.append({"role": "assistant", "content": f"Previously discussing: {context['last_topic']}"})
         
-        # Add the user's message
         messages.append({"role": "user", "content": user_message})
-        
-        # Call OpenAI API
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # or "gpt-4" if available
-            messages=messages,
-            temperature=0.7,
-            max_tokens=500
+
+        # Call DeepSeek API
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",  # Verify endpoint
+            headers={"Authorization": "Bearer YOUR_DEEPSEEK_API_KEY"},  # Replace!
+            json={
+                "model": "deepseek-chat",
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 500,
+            },
+            timeout=10  # Avoid hanging
         )
-        
-        answer = response.choices[0].message['content']
-        
-        # Try to extract the main topic from the response
-        last_topic = "GMO information"  # default
-        if "GMO" in user_message.upper() or "genetically" in user_message.lower():
-            last_topic = user_message[:50]  # truncate long messages
-        
-        return {
-            'answer': answer,
-            'context': {'last_topic': last_topic},
-            'confidence': 0.8  # OpenAI responses are generally confident
+        response_data = response.json()
+
+        # Safely extract the answer (adjust based on actual API response)
+        answer = response_data.get("choices", [{}])[0].get("message", {}).get("content", "No answer found.")
+
+        # Update context (ensure all values are JSON-serializable)
+        new_context = {
+            "last_topic": str(user_message[:50])  # Truncate to avoid issues
         }
-    
+
+        return {
+            "answer": str(answer),  # Force string conversion
+            "context": new_context,  # Dict with serializable values
+            "confidence": float(0.8)  # Force float
+        }
+
     except Exception as e:
         return {
-            'answer': f"I encountered an error processing your request: {str(e)}",
-            'context': context,
-            'confidence': 0.1
+            "answer": f"API Error: {str(e)}",
+            "context": {},
+            "confidence": 0.1
         }
+
+@csrf_exempt
+@login_required
+def chat_api(request):
+    """
+    Handle AJAX chat requests (fully JSON-safe).
+    """
+    if request.method == 'POST':
+        try:
+            # Parse input data (ensure it's JSON)
+            data = json.loads(request.body)
+            user_message = data.get("message", "")
+            context = data.get("context", {})
+
+            # Get DeepSeek's response
+            result = get_deepseek_response(user_message, context)
+
+            # Save to database (if needed)
+            chat_msg = ChatMessage.objects.create(
+                user=request.user,
+                message=user_message,
+                response=result["answer"],
+                context=json.dumps(result["context"])  # Store as JSON string
+            )
+
+            # Return strictly JSON-serializable data
+            return JsonResponse({
+                "response": str(result["answer"]),
+                "context": dict(result["context"]),  # Force dict
+                "message_id": int(chat_msg.id),  # Force int
+                "suggestions": ["GMO safety", "GMO regulations"]  # Simple list
+            })
+
+        except Exception as e:
+            return JsonResponse(
+                {"error": str(e)},  # Error must be a string
+                status=500
+            )
+
+    return JsonResponse({"error": "Invalid request"}, status=400)
+
+
 
 @login_required
 def chat_view(request):
@@ -108,35 +155,8 @@ def chat_view(request):
         'topics': ["GMO Science", "GMO Regulations", "GMO Crops", "GMO Verification"]  # Example topics
     })
 
-@csrf_exempt
-@login_required
-def chat_api(request):
-    """Handle AJAX chat requests using OpenAI"""
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            user_message = data.get('message', '')
-            context = data.get('context', {})
-            
-            result = get_openai_response(user_message, context)
-            
-            chat_msg = ChatMessage.objects.create(
-                user=request.user,
-                message=user_message,
-                response=result['answer'],
-                context=result['context']
-            )
-            
-            return JsonResponse({
-                'response': result['answer'],
-                'context': result['context'],
-                'message_id': chat_msg.id,
-                'suggestions': ["More about GMO safety", "GMO regulations", "Common GMO crops"]
-            })
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
-    
-    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
 
 @csrf_exempt
 @login_required
