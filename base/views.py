@@ -299,3 +299,54 @@ def webinar_redirect(request):
     except Webinar.DoesNotExist:
         # Fallback URL if no webinars exist
         return redirect('https://zoom.us/webinars')  # Or a custom "no webinars" page
+
+
+# views.py
+from django.http import JsonResponse
+from django.views.generic import DetailView
+from .models import GMOProduct
+
+class ProductDetailView(DetailView):
+    model = GMOProduct
+    template_name = 'product_detail.html'
+    context_object_name = 'product'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['related_products'] = GMOProduct.objects.filter(
+            crop_type=self.object.crop_type
+        ).exclude(id=self.object.id)[:3]
+        return context
+
+
+
+# views.py
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import GMOProduct
+
+@csrf_exempt  # Only for development - use proper CSRF protection in production
+def verify_product(request, product_id):
+    try:
+        product = GMOProduct.objects.get(id=product_id)
+        
+        # In a real app, you might have more complex verification logic
+        is_verified = product.verification_status == 'verified'
+        certification_valid = bool(product.certification_id)
+        
+        return JsonResponse({
+            'success': True,
+            'verified': is_verified,
+            'certification_valid': certification_valid,
+            'status': product.get_verification_status_display(),
+            'product': {
+                'name': product.name,
+                'company': product.company,
+                'certification_id': product.certification_id,
+            }
+        })
+    except GMOProduct.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Product not found'
+        }, status=404)

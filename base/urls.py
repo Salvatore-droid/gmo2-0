@@ -11,4 +11,9 @@ urlpatterns = [
     path('chat/api/', views.chat_api, name='chat_api'),
     path('webinars/', views.webinar_redirect, name='webinars'),
 
+    path('product/<int:pk>/', views.ProductDetailView.as_view(), name='product_detail'),
+    path('api/products/<int:product_id>/verify/', views.verify_product, name='verify_product'),
+
+
+
 ]
