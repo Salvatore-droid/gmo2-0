@@ -12,6 +12,7 @@ from django.http import Http404
 from .models import Webinar
 from django.views.decorators.csrf import csrf_exempt
 import openai
+from django.views.generic import DetailView
 
 
 
@@ -301,10 +302,7 @@ def webinar_redirect(request):
         return redirect('https://zoom.us/webinars')  # Or a custom "no webinars" page
 
 
-# views.py
-from django.http import JsonResponse
-from django.views.generic import DetailView
-from .models import GMOProduct
+
 
 class ProductDetailView(DetailView):
     model = GMOProduct
@@ -319,11 +317,6 @@ class ProductDetailView(DetailView):
         return context
 
 
-
-# views.py
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from .models import GMOProduct
 
 @csrf_exempt  # Only for development - use proper CSRF protection in production
 def verify_product(request, product_id):
