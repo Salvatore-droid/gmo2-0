@@ -1,4 +1,4 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.core.paginator import Paginator
@@ -11,7 +11,7 @@ from django.contrib.auth.models import User
 from django.http import Http404
 from .models import Webinar
 from django.views.decorators.csrf import csrf_exempt
-from transformers import pipeline
+import openai
 
 
 
@@ -43,62 +43,59 @@ def dashboard(request):
     return render(request, 'dashboard.html', context)
 
 
-# agriculture_app/views.py
-from django.shortcuts import render
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.decorators import login_required
-import json
-from .models import ChatMessage, GMOKnowledgeBase
-from .gmo_knowledge import GMO_KNOWLEDGE, get_related_suggestions
 
-def get_gmo_response(user_message, context):
+
+# Configure your OpenAI API key (should be in settings)
+openai.api_key = "your_openai_api_key"
+
+def get_openai_response(user_message, context):
     """
-    Enhanced response generation with context awareness
+    Get response from OpenAI's API using the conversation context
     """
-    # 1. Check knowledge base for direct matches
-    knowledge_match = GMOKnowledgeBase.objects.filter(
-        question_patterns__icontains=user_message.lower()
-    ).order_by('-confidence_score').first()
-    
-    if knowledge_match:
-        return {
-            'answer': knowledge_match.answer,
-            'context': {'last_topic': knowledge_match.topic},
-            'confidence': knowledge_match.confidence_score
-        }
-    
-    # 2. Check our static knowledge base
-    for topic, content in GMO_KNOWLEDGE.items():
-        if topic in user_message.lower():
-            return {
-                'answer': content,
-                'context': {'last_topic': topic},
-                'confidence': 0.9  # High confidence for curated content
-            }
-    
-    # 3. Use NLP for more complex queries (example with OpenAI)
     try:
+        # Prepare the conversation history
+        messages = [
+            {"role": "system", "content": "You are an expert assistant on GMO (Genetically Modified Organisms) topics. "
+             "Provide accurate, science-based information about GMO science, regulations, crops, and verification. "
+             "If you don't know an answer, say so rather than making up information."}
+        ]
+        
+        # Add context if available
+        if 'last_topic' in context:
+            messages.append({
+                "role": "assistant", 
+                "content": f"We were previously discussing {context['last_topic']}."
+            })
+        
+        # Add the user's message
+        messages.append({"role": "user", "content": user_message})
+        
+        # Call OpenAI API
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an agricultural expert specializing in GMO technology."},
-                {"role": "user", "content": user_message}
-            ],
+            model="gpt-3.5-turbo",  # or "gpt-4" if available
+            messages=messages,
             temperature=0.7,
-            max_tokens=200
+            max_tokens=500
         )
+        
+        answer = response.choices[0].message['content']
+        
+        # Try to extract the main topic from the response
+        last_topic = "GMO information"  # default
+        if "GMO" in user_message.upper() or "genetically" in user_message.lower():
+            last_topic = user_message[:50]  # truncate long messages
+        
         return {
-            'answer': response.choices[0].message['content'],
-            'context': context,
-            'confidence': 0.8  # Default confidence for generated answers
+            'answer': answer,
+            'context': {'last_topic': last_topic},
+            'confidence': 0.8  # OpenAI responses are generally confident
         }
-    except Exception:
-        # Fallback response
+    
+    except Exception as e:
         return {
-            'answer': "I'm sorry, I couldn't retrieve information on that GMO topic. Could you try rephrasing?",
+            'answer': f"I encountered an error processing your request: {str(e)}",
             'context': context,
-            'confidence': 0.3
+            'confidence': 0.1
         }
 
 @login_required
@@ -107,20 +104,20 @@ def chat_view(request):
     recent_messages = ChatMessage.objects.filter(user=request.user).order_by('-created_at')[:5]
     return render(request, 'dashboard.html', {
         'recent_messages': recent_messages,
-        'topics': GMOKnowledgeBase.TOPIC_CHOICES
+        'topics': ["GMO Science", "GMO Regulations", "GMO Crops", "GMO Verification"]  # Example topics
     })
 
 @csrf_exempt
 @login_required
 def chat_api(request):
-    """Handle AJAX chat requests"""
+    """Handle AJAX chat requests using OpenAI"""
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             user_message = data.get('message', '')
             context = data.get('context', {})
             
-            result = get_gmo_response(user_message, context)
+            result = get_openai_response(user_message, context)
             
             chat_msg = ChatMessage.objects.create(
                 user=request.user,
@@ -133,7 +130,7 @@ def chat_api(request):
                 'response': result['answer'],
                 'context': result['context'],
                 'message_id': chat_msg.id,
-                'suggestions': get_related_suggestions(result['context'].get('last_topic'))
+                'suggestions': ["More about GMO safety", "GMO regulations", "Common GMO crops"]
             })
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
@@ -143,7 +140,7 @@ def chat_api(request):
 @csrf_exempt
 @login_required
 def feedback_api(request):
-    """Handle user feedback to improve responses"""
+    """Handle user feedback (simplified since we're not tracking knowledge base confidence)"""
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
@@ -154,16 +151,6 @@ def feedback_api(request):
             message.is_helpful = is_helpful
             message.save()
             
-            if is_helpful is not None:
-                knowledge = GMOKnowledgeBase.objects.filter(
-                    answer=message.response
-                ).first()
-                
-                if knowledge:
-                    change = 0.1 if is_helpful else -0.15
-                    knowledge.confidence_score = max(0.1, min(1.0, knowledge.confidence_score + change))
-                    knowledge.save()
-            
             return JsonResponse({'status': 'success'})
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
@@ -173,50 +160,53 @@ def feedback_api(request):
 
 
 
-
 @login_required
 def verify_product(request):
     if request.method == 'POST':
-        verification_method = request.POST.get('method')
-        verification_code = request.POST.get('code')
-        
-        # In a real app, you'd validate against your database
         try:
-            product = GMOProduct.objects.get(qr_code=verification_code)
-            is_verified = product.verification_status == 'verified'
+            data = json.loads(request.body)
+            qr_data = data.get('qr_data', '')
             
-            VerificationRequest.objects.create(
-                user=request.user,
-                product=product,
-                verification_code=verification_code,
-                verification_method=verification_method,
-                is_verified=is_verified,
-                verification_result={
-                    'product_name': product.name,
+            # Parse the QR data to extract the product ID or certification ID
+            # This depends on how you structure your QR data
+            product_id = None
+            for line in qr_data.split('\n'):
+                if line.startswith('Certification:'):
+                    cert_id = line.split(': ')[1].strip()
+                    if cert_id != 'None':
+                        product = get_object_or_404(GMOProduct, certification_id=cert_id)
+                        break
+            
+            if not product_id:
+                # Alternative parsing if certification ID not found
+                for line in qr_data.split('\n'):
+                    if line.startswith('Name:'):
+                        product_name = line.split(': ')[1].strip()
+                        product = get_object_or_404(GMOProduct, name=product_name)
+                        break
+            
+            response_data = {
+                'status': 'success',
+                'product': {
+                    'name': product.name,
                     'company': product.company,
-                    'status': product.verification_status,
+                    'crop_type': product.get_crop_type_display(),
+                    'verification_status': product.get_verification_status_display(),
                     'certification_id': product.certification_id,
-                    'certification_date': product.certification_date.strftime('%B %d, %Y') if product.certification_date else '',
                     'certification_authority': product.certification_authority,
+                    'certification_date': product.certification_date.strftime('%Y-%m-%d') if product.certification_date else None,
+                    'image_url': product.image.url if product.image else None,
                 }
-            )
+            }
+            return JsonResponse(response_data)
             
+        except Exception as e:
             return JsonResponse({
-                'is_verified': is_verified,
-                'product_name': product.name,
-                'company': product.company,
-                'status': product.verification_status,
-                'certification_id': product.certification_id,
-                'certification_date': product.certification_date.strftime('%B %d, %Y') if product.certification_date else '',
-                'certification_authority': product.certification_authority,
-            })
-        except GMOProduct.DoesNotExist:
-            return JsonResponse({
-                'is_verified': False,
-                'error': 'Product not found'
-            }, status=404)
+                'status': 'error',
+                'message': str(e)
+            }, status=400)
     
-    return JsonResponse({'error': 'Invalid request'}, status=400)
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
 
 def filter_products(request):
     crop_type = request.GET.get('crop_type', '')

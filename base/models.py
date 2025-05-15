@@ -3,6 +3,12 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 import uuid
 
+from django.db import models
+from django.utils import timezone
+import uuid
+import qrcode
+from io import BytesIO
+from django.core.files.base import ContentFile
 
 class GMOProduct(models.Model):
     VERIFICATION_STATUS = [
@@ -44,31 +50,33 @@ class GMOProduct(models.Model):
     qr_code = models.ImageField(upload_to='qr_codes/', null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+    qr_data = models.TextField(blank=True)  # Optional: Store the raw QR data
 
-    
     def __str__(self):
         return self.name
     
     def save(self, *args, **kwargs):
-        if not self.qr_code and self.approval:
+        if not self.qr_code:  # Generate QR code if it doesn't exist
             self.generate_qr_code()
         super().save(*args, **kwargs)
     
     def generate_qr_code(self):
-        import qrcode
-        from io import BytesIO
-        from django.core.files.base import ContentFile
-        
+        """Generate QR code using the product's basic information"""
         qr_data = f"""
-        Product: {self.name}
-        Approval ID: {self.approval.approval_id}
-        Status: {self.approval.get_status_display()}
-        Approved by: {self.approval.approving_body}
-        Approval Date: {self.approval.approval_date}
-        Expiry: {self.approval.expiry_date}
-        Risk Level: {self.approval.risk_level}/5
+        GMO Product Information:
+        Name: {self.name}
+        Company: {self.company}
+        Crop Type: {self.get_crop_type_display()}
+        Status: {self.get_verification_status_display()}
+        Certification: {self.certification_id or 'None'}
+        Certified By: {self.certification_authority or 'N/A'}
         """
         
+        # Clean up the data
+        qr_data = "\n".join([line.strip() for line in qr_data.split("\n") if line.strip()])
+        self.qr_data = qr_data  # Store the raw data if needed
+        
+        # Generate QR code
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -82,12 +90,15 @@ class GMOProduct(models.Model):
         buffer = BytesIO()
         img.save(buffer, format='PNG')
         
+        # Generate filename using product name and ID
+        filename = f'qr_{self.name.lower().replace(" ", "_")}_{self.id or "new"}.png'
+        
+        # Save QR code image
         self.qr_code.save(
-            f'qr_{self.approval.approval_id}.png',
+            filename,
             ContentFile(buffer.getvalue()),
             save=False
         )
-
 
 
 

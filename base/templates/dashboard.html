@@ -95,56 +95,125 @@
         let chatContext = {};
         
         function sendChatMessage() {
-            const userInput = document.getElementById('userInput');
-            const message = userInput.value.trim();
-            
-            if (!message) return;
-            
-            // Add user message to chat
-            addMessageToChat(message, false);
-            userInput.value = '';
-            
-            // Show loading indicator
-            showLoadingIndicator();
-            
-            // Send to server
-            fetch('/chat/api/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCookie('csrftoken')
-                },
-                body: JSON.stringify({
-                    message: message,
-                    context: chatContext
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Remove loader
-                removeLoadingIndicator();
-                
-                if (data.error) {
-                    console.error(data.error);
-                    showError("Sorry, something went wrong. Please try again.");
-                    return;
-                }
-                
-                // Update context
-                chatContext = data.context || {};
-                
-                // Add response to chat
-                addMessageToChat(data.response, true, data.message_id);
-                
-                // Update suggestions
-                updateSuggestions(data.suggestions);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                removeLoadingIndicator();
-                showError("Network error. Please check your connection.");
-            });
+    const userInput = document.getElementById('userInput');
+    const message = userInput.value.trim();
+    
+    if (!message) return;
+    
+    // Add user message to chat immediately
+    addMessageToChat(message, false);
+    userInput.value = '';
+    
+    // Show loading indicator
+    showLoadingIndicator();
+    
+    // First try to handle locally without API call for common questions
+    const quickResponse = tryLocalResponse(message, chatContext);
+    if (quickResponse) {
+        setTimeout(() => {
+            removeLoadingIndicator();
+            addMessageToChat(quickResponse.answer, true);
+            updateSuggestions(getRelatedSuggestions(quickResponse.context?.last_topic));
+            chatContext = quickResponse.context || {};
+        }, 500); // Small delay for better UX
+        return;
+    }
+    
+    // Send to server for more complex handling
+    fetch('/chat/api/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            message: message,
+            context: chatContext
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
+        return response.json();
+    })
+    .then(data => {
+        removeLoadingIndicator();
+        
+        if (data.error) {
+            showError(data.error);
+            return;
+        }
+        
+        // Update context
+        chatContext = data.context || {};
+        
+        // Add response to chat
+        addMessageToChat(data.response, true, data.message_id);
+        
+        // Update suggestions
+        updateSuggestions(data.suggestions || getDefaultSuggestions());
+        
+        // Auto-scroll to bottom
+        scrollToBottom();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        removeLoadingIndicator();
+        
+        // Fallback to local responses if server fails
+        const fallbackResponse = getFallbackResponse(message);
+        if (fallbackResponse) {
+            addMessageToChat(fallbackResponse.answer, true);
+            updateSuggestions(fallbackResponse.suggestions);
+        } else {
+            showError("I'm having trouble responding. Please try again later.");
+        }
+    });
+}
+
+// Local response handling functions
+function tryLocalResponse(message, context) {
+    const commonQuestions = {
+        "hello": { answer: "Hello! How can I help you with GMO information today?", context: {} },
+        "hi": { answer: "Hi there! Ask me anything about genetically modified organisms.", context: {} },
+        "thanks": { answer: "You're welcome! Let me know if you have any other GMO questions.", context: {} }
+    };
+    
+    const lowerMsg = message.toLowerCase();
+    if (commonQuestions[lowerMsg]) {
+        return commonQuestions[lowerMsg];
+    }
+    
+    return null;
+}
+
+function getFallbackResponse(message) {
+    // Simple keyword matching for critical fallback
+    if (message.includes('gmo') || message.includes('genetic')) {
+        return {
+            answer: "I'm currently unable to access detailed information. Here are some general GMO facts: " +
+                   "GMOs are organisms whose genetic material has been altered using genetic engineering techniques. " +
+                   "Common GMO crops include corn, soybeans, and cotton.",
+            suggestions: ["What crops are GMO?", "Are GMOs safe?", "GMO regulations"]
+        };
+    }
+    return null;
+}
+
+function getDefaultSuggestions() {
+    return [
+        "What are the benefits of GMOs?",
+        "How to identify GMO foods?",
+        "List of GMO crops",
+        "GMO safety studies"
+    ];
+}
+
+function scrollToBottom() {
+    const messageArea = document.getElementById('messageArea');
+    messageArea.scrollTop = messageArea.scrollHeight;
+}
         
         function sendSuggestion(suggestion) {
             document.getElementById('userInput').value = suggestion;
@@ -440,6 +509,85 @@
                 </button>
             </div>
         </div>
+        <!-- QR Verification Modal -->
+        <div id="verificationModal" class="fixed inset-0 z-50 hidden overflow-y-auto">
+            <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                <!-- Background overlay -->
+                <div class="fixed inset-0 transition-opacity" aria-hidden="true">
+                    <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
+                </div>
+                
+                <!-- Modal content -->
+                <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <div class="sm:flex sm:items-start">
+                            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                <!-- <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">Scan Product QR Code</h3> -->
+                                
+                                <!-- QR Scanner Container -->
+                                <div id="qrScanner" class="w-full h-64 border-2 border-dashed border-gray-300 rounded-lg mb-4 flex items-center justify-center">
+                                    <div class="text-center">
+                                        <i class="ri-qr-scan-line ri-3x text-gray-400 mb-2"></i>
+                                        <p class="text-sm text-gray-500">Position QR code within frame</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- Verification Result (initially hidden) -->
+                                <div id="verificationResult" class="hidden">
+                                    <div class="flex items-center mb-4">
+                                        <div id="statusBadge" class="px-3 py-1 rounded-full text-xs font-medium mr-3"></div>
+                                        <h4 id="productName" class="text-lg font-medium"></h4>
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 gap-4 text-sm mb-4">
+                                        <div>
+                                            <p class="text-gray-500">Company</p>
+                                            <p id="productCompany" class="font-medium"></p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500">Crop Type</p>
+                                            <p id="productCropType" class="font-medium"></p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500">Certification ID</p>
+                                            <p id="productCertification" class="font-medium"></p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500">Certified By</p>
+                                            <p id="productAuthority" class="font-medium"></p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div id="productImageContainer" class="hidden mb-4">
+                                        <img id="productImage" src="" alt="Product Image" class="w-full h-32 object-contain rounded-lg border border-gray-200">
+                                    </div>
+                                </div>
+                                
+                                <!-- Error Message (initially hidden) -->
+                                <div id="verificationError" class="hidden bg-red-50 border-l-4 border-red-500 p-4 mb-4">
+                                    <div class="flex">
+                                        <div class="flex-shrink-0">
+                                            <i class="ri-error-warning-line ri-xl text-red-500"></i>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p id="errorMessage" class="text-sm text-red-700"></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                        <button id="scanAgainBtn" type="button" class="hidden w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-white hover:bg-primary-dark focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">
+                            Scan Again
+                        </button>
+                        <button type="button" onclick="closeVerificationModal()" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
         
         <!-- Verified Products List -->
         <div class="bg-white rounded-lg shadow-sm overflow-hidden">
@@ -607,8 +755,172 @@
     </div>
 </div>
 
+<script src="https://unpkg.com/html5-qrcode@2.3.4/dist/html5-qrcode.min.js"></script>
+
+
 <script>
 
+
+let html5QrCode;
+
+function openVerificationModal() {
+    const modal = document.getElementById('verificationModal');
+    modal.classList.remove('hidden');
+    
+    // Initialize scanner
+    html5QrCode = new Html5Qrcode("qrScanner");
+    const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+        handleScanSuccess(decodedText);
+    };
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+    
+    html5QrCode.start(
+        { facingMode: "environment" }, 
+        config, 
+        qrCodeSuccessCallback,
+        () => {} // Verbose logging
+    ).catch(err => {
+        console.error("Error starting scanner:", err);
+        showError("Could not start camera. Please ensure camera access is allowed.");
+    });
+}
+
+function closeVerificationModal() {
+    if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().then(() => {
+            console.log("QR Code scanning stopped.");
+        }).catch(err => {
+            console.error("Error stopping scanner:", err);
+        });
+    }
+    
+    document.getElementById('verificationModal').classList.add('hidden');
+    resetScannerUI();
+}
+
+function handleScanSuccess(decodedText) {
+    // Stop scanner first
+    html5QrCode.stop().then(() => {
+        console.log("QR Code scanning stopped.");
+        
+        // Parse the decoded text (assuming it's in JSON format)
+        try {
+            const productData = JSON.parse(decodedText);
+            displayProductInfo(productData);
+            
+            // Optional: Verify with server
+            verifyWithServer(productData);
+            
+        } catch (e) {
+            console.error("Error parsing QR data:", e);
+            showError("Invalid QR code format. Please scan a valid product QR code.");
+        }
+    }).catch(err => {
+        console.error("Error stopping scanner:", err);
+    });
+}
+
+function displayProductInfo(product) {
+    // Hide scanner, show result
+    document.getElementById('qrScanner').classList.add('hidden');
+    document.getElementById('verificationResult').classList.remove('hidden');
+    document.getElementById('scanAgainBtn').classList.remove('hidden');
+    
+    // Populate product info
+    document.getElementById('productName').textContent = product.name;
+    document.getElementById('productCompany').textContent = product.company;
+    document.getElementById('productCropType').textContent = product.crop_type;
+    document.getElementById('productCertification').textContent = product.certification_id || 'None';
+    document.getElementById('productAuthority').textContent = product.certification_authority || 'N/A';
+    
+    // Set status badge
+    const statusBadge = document.getElementById('statusBadge');
+    statusBadge.textContent = product.verification_status;
+    statusBadge.className = 'px-3 py-1 rounded-full text-xs font-medium mr-3 ';
+    
+    if (product.verification_status.toLowerCase() === 'verified') {
+        statusBadge.classList.add('bg-green-100', 'text-green-800');
+    } else if (product.verification_status.toLowerCase() === 'pending') {
+        statusBadge.classList.add('bg-yellow-100', 'text-yellow-800');
+    } else {
+        statusBadge.classList.add('bg-red-100', 'text-red-800');
+    }
+    
+    // Handle product image
+    if (product.image_url) {
+        document.getElementById('productImage').src = product.image_url;
+        document.getElementById('productImageContainer').classList.remove('hidden');
+    } else {
+        document.getElementById('productImageContainer').classList.add('hidden');
+    }
+}
+
+function verifyWithServer(productData) {
+    fetch('/verify-product/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: JSON.stringify({
+            qr_data: productData,
+            certification_id: productData.certification_id
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Update UI with fresh data from server
+            displayProductInfo(data.product);
+        } else {
+            showError(data.message || "Verification failed");
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showError("Network error during verification");
+    });
+}
+
+function showError(message) {
+    document.getElementById('errorMessage').textContent = message;
+    document.getElementById('verificationError').classList.remove('hidden');
+}
+
+function resetScannerUI() {
+    document.getElementById('qrScanner').classList.remove('hidden');
+    document.getElementById('verificationResult').classList.add('hidden');
+    document.getElementById('verificationError').classList.add('hidden');
+    document.getElementById('scanAgainBtn').classList.add('hidden');
+    document.getElementById('qrScanner').innerHTML = `
+        <div class="text-center">
+            <i class="ri-qr-scan-line ri-3x text-gray-400 mb-2"></i>
+            <p class="text-sm text-gray-500">Position QR code within frame</p>
+        </div>
+    `;
+}
+
+// Helper function to get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Set up scan again button
+document.getElementById('scanAgainBtn').addEventListener('click', function() {
+    resetScannerUI();
+    openVerificationModal();
+});
 
 
 
