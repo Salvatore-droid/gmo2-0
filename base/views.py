@@ -18,14 +18,23 @@ import requests
 
 
 
-
 @login_required
 def dashboard(request):
     # Get latest chat messages (last 10)
     chat_messages = ChatMessage.objects.filter(user=request.user).order_by('-created_at')[:10]
     
-    # Get educational resources
-    educational_resources = EducationalResource.objects.all().order_by('-created_at')[:4]
+    # Get video resources - first one is featured, next 3 are related
+    video_resources = EducationalResource.objects.filter(
+        resource_type='video'
+    ).exclude(video_file='').order_by('-created_at')  # Exclude empty video files
+    
+    featured_video = video_resources.first() if video_resources.exists() else None
+    related_videos = video_resources[1:4] if video_resources.count() > 1 else []
+    
+    # Get other educational resources (non-video)
+    other_resources = EducationalResource.objects.exclude(
+        resource_type='video'
+    ).order_by('-created_at')[:4]
     
     # Get verified products
     verified_products = GMOProduct.objects.filter(verification_status='verified').order_by('-created_at')[:3]
@@ -38,7 +47,8 @@ def dashboard(request):
     
     context = {
         'chat_messages': chat_messages,
-        'educational_resources': educational_resources,
+        'featured_video': featured_video,
+        'educational_resources': list(related_videos) + list(other_resources),
         'verified_products': verified_products,
         'page_obj': page_obj,
     }

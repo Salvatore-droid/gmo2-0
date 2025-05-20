@@ -1,9 +1,4 @@
 from django.db import models
-from django.contrib.auth.models import User
-from django.utils import timezone
-import uuid
-
-from django.db import models
 from django.utils import timezone
 import uuid
 import qrcode
@@ -50,18 +45,17 @@ class GMOProduct(models.Model):
     qr_code = models.ImageField(upload_to='qr_codes/', null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
-    qr_data = models.TextField(blank=True)  # Optional: Store the raw QR data
+    qr_data = models.TextField(blank=True)
 
     def __str__(self):
         return self.name
     
     def save(self, *args, **kwargs):
-        if not self.qr_code:  # Generate QR code if it doesn't exist
+        if not self.qr_code:
             self.generate_qr_code()
         super().save(*args, **kwargs)
     
     def generate_qr_code(self):
-        """Generate QR code using the product's basic information"""
         qr_data = f"""
         GMO Product Information:
         Name: {self.name}
@@ -71,12 +65,8 @@ class GMOProduct(models.Model):
         Certification: {self.certification_id or 'None'}
         Certified By: {self.certification_authority or 'N/A'}
         """
-        
-        # Clean up the data
         qr_data = "\n".join([line.strip() for line in qr_data.split("\n") if line.strip()])
-        self.qr_data = qr_data  # Store the raw data if needed
-        
-        # Generate QR code
+        self.qr_data = qr_data
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -85,22 +75,11 @@ class GMOProduct(models.Model):
         )
         qr.add_data(qr_data)
         qr.make(fit=True)
-        
         img = qr.make_image(fill_color="black", back_color="white")
         buffer = BytesIO()
         img.save(buffer, format='PNG')
-        
-        # Generate filename using product name and ID
         filename = f'qr_{self.name.lower().replace(" ", "_")}_{self.id or "new"}.png'
-        
-        # Save QR code image
-        self.qr_code.save(
-            filename,
-            ContentFile(buffer.getvalue()),
-            save=False
-        )
-
-
+        self.qr_code.save(filename, ContentFile(buffer.getvalue()), save=False)
 
 class Webinar(models.Model):
     title = models.CharField(max_length=200, help_text="Name of the webinar")
@@ -112,20 +91,17 @@ class Webinar(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-scheduled_time']  # Newest first
+        ordering = ['-scheduled_time']
 
     def __str__(self):
         return f"{self.title} ({self.scheduled_time})"
 
-
-
-
 class ChatMessage(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+    user = models.ForeignKey('auth.User', on_delete=models.CASCADE, null=True)
     message = models.TextField(null=True)
     response = models.TextField(null=True)
-    context = models.JSONField(default=dict)  # Store conversation context
-    is_helpful = models.BooleanField(null=True)  # User feedback
+    context = models.JSONField(default=dict)
+    is_helpful = models.BooleanField(null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -160,17 +136,29 @@ class EducationalResource(models.Model):
     title = models.CharField(max_length=200)
     resource_type = models.CharField(max_length=20, choices=RESOURCE_TYPES)
     description = models.TextField()
-    url = models.URLField()
+    video_file = models.FileField(upload_to='videos/', blank=True, null=True)  # Changed from 'video' to 'video_file'
     thumbnail = models.ImageField(upload_to='resources/', null=True, blank=True)
-    duration = models.CharField(max_length=20, blank=True)  # For videos
+    duration = models.CharField(max_length=20, blank=True)
     source = models.CharField(max_length=100)
     created_at = models.DateTimeField(default=timezone.now)
     
     def __str__(self):
         return self.title
+    
+    def save(self, *args, **kwargs):
+        # If this is a video resource and a new video is being uploaded
+        if self.resource_type == 'video' and self.video_file:
+            # Set the source to "Local Upload"
+            self.source = "Local Upload"
+            
+            # You could add logic here to extract duration if needed
+            # This would require additional libraries like ffmpeg
+            
+        super().save(*args, **kwargs)
 
+        
 class VerificationRequest(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey('auth.User', on_delete=models.CASCADE)
     product = models.ForeignKey(GMOProduct, on_delete=models.CASCADE, null=True, blank=True)
     verification_code = models.CharField(max_length=100)
     verification_method = models.CharField(max_length=20, choices=[

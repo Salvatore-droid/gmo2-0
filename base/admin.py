@@ -168,21 +168,41 @@ admin.site.site_title = "GMO Knowledge Base"
 admin.site.index_title = "Welcome to GMO Agricultural Assistant Admin"
 
     
-@admin.register(EducationalResource)
-class EducationalResourceAdmin(ImportExportModelAdmin):
-    resource_class = EducationalResourceResource
-    list_display = ('title', 'resource_type', 'source', 'duration', 'thumbnail_preview', 'created_at')
-    list_filter = ('resource_type', 'source', 'created_at')
-    search_fields = ('title', 'description', 'source')
-    readonly_fields = ('thumbnail_preview',)
-    list_per_page = 25
-    date_hierarchy = 'created_at'
+
+
+from django.contrib import admin
+from .models import EducationalResource
+
+class EducationalResourceAdmin(admin.ModelAdmin):
+    list_display = ('title', 'resource_type', 'created_at')
+    list_filter = ('resource_type',)
+    search_fields = ('title', 'description')
     
-    def thumbnail_preview(self, obj):
-        if obj.thumbnail:
-            return format_html('<img src="{}" style="max-height: 100px; max-width: 100px;" />', obj.thumbnail.url)
-        return "-"
-    thumbnail_preview.short_description = 'Thumbnail'
+    fieldsets = (
+        (None, {
+            'fields': ('title', 'resource_type', 'description')
+        }),
+        ('Video Content', {
+            'fields': ('video_file', 'thumbnail', 'duration'),
+            'classes': ('collapse',),
+        }),
+        ('Metadata', {
+            'fields': ('source', 'created_at')
+        }),
+    )
+    
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj and obj.resource_type != 'video':
+            # Remove video fields if not a video resource
+            fieldsets = [
+                fs for fs in fieldsets 
+                if fs[0] != 'Video Content'
+            ]
+        return fieldsets
+
+admin.site.register(EducationalResource, EducationalResourceAdmin)
+
 
 @admin.register(VerificationRequest)
 class VerificationRequestAdmin(admin.ModelAdmin):

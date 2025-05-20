@@ -407,87 +407,126 @@ function scrollToBottom() {
         
         
         <!-- Educational Content Section -->
-        <div class="mt-6 bg-white rounded-lg shadow-sm overflow-hidden">
-            <div class="p-4 border-b border-gray-100">
-                <h2 class="font-medium text-lg">Educational Resources</h2>
-            </div>
-            <div class="p-4">
-                <div class="relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-4">
-                    <video id="mainVideo" class="w-full h-full object-cover" preload="metadata">
-                        <source src="https://youtu.be/DpSHk09Yxyc" type="video/mp4">
-                        Your browser does not support the video tag.
-                    </video>
-                    <div id="videoOverlay" class="absolute inset-0 bg-black/40 flex items-center justify-center cursor-pointer">
-                        <button id="bigPlayButton" class="w-16 h-16 flex items-center justify-center bg-white/20 backdrop-blur-sm rounded-full text-white">
-                            <i class="ri-play-fill ri-2x"></i>
-                        </button>
-                    </div>
-                    <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-                        <h3 class="text-white font-medium">Understanding GMOs: Benefits and Safety</h3>
-                        <p class="text-white/80 text-sm">05:24 • Agricultural Science Institute</p>
-                    </div>
-                    <div id="videoControls" class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity">
-                        <div class="flex items-center gap-4">
-                            <button id="playPauseBtn" class="text-white hover:text-primary">
-                                <i class="ri-play-fill ri-lg"></i>
-                            </button>
-                            <div class="flex items-center gap-2 flex-1">
-                                <span id="currentTime" class="text-white text-sm">0:00</span>
-                                <input type="range" id="videoProgress" class="flex-1 video-progress" min="0" max="100" value="0">
-                                <span id="duration" class="text-white text-sm">5:24</span>
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <div class="relative group">
-                                    <button id="volumeBtn" class="text-white hover:text-primary">
-                                        <i class="ri-volume-up-fill ri-lg"></i>
-                                    </button>
-                                    <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block">
-                                        <input type="range" id="volumeSlider" class="w-24 video-progress rotate-270" min="0" max="100" value="100">
-                                    </div>
-                                </div>
-                                <button id="fullscreenBtn" class="text-white hover:text-primary">
-                                    <i class="ri-fullscreen-fill ri-lg"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="flex items-center gap-3 mb-6">
-                    <button class="w-10 h-10 flex items-center justify-center text-gray-700 hover:bg-gray-100 rounded-full" onclick="mainVideo.currentTime = Math.max(0, mainVideo.currentTime - 10)">
-                        <i class="ri-rewind-mini-fill ri-lg"></i>
+        <!-- Video Section -->
+<div class="mt-6 bg-white rounded-lg shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-gray-100">
+        <h2 class="font-medium text-lg">Educational Resources</h2>
+    </div>
+    <div class="p-4">
+        <!-- Main Featured Video -->
+        <div class="relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-4">
+            {% if featured_video and featured_video.video_file %}
+                <video id="mainVideo" class="w-full h-full object-cover" preload="metadata">
+                    <source src="{{ featured_video.video_file.url }}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <div id="videoOverlay" class="absolute inset-0 bg-black/40 flex items-center justify-center cursor-pointer">
+                    <button id="bigPlayButton" class="w-16 h-16 flex items-center justify-center bg-white/20 backdrop-blur-sm rounded-full text-white">
+                        <i class="ri-play-fill ri-2x"></i>
                     </button>
-                    <button class="w-12 h-12 flex items-center justify-center bg-primary text-white rounded-full" onclick="togglePlay()">
-                        <i class="ri-play-fill ri-lg"></i>
-                    </button>
-                    <button class="w-10 h-10 flex items-center justify-center text-gray-700 hover:bg-gray-100 rounded-full" onclick="mainVideo.currentTime = Math.min(mainVideo.duration, mainVideo.currentTime + 10)">
-                        <i class="ri-speed-mini-fill ri-lg"></i>
-                    </button>
-                    <div class="flex-1 ml-2">
-                        <input type="range" class="video-progress" min="0" max="100" value="0" onchange="mainVideo.currentTime = (this.value / 100) * mainVideo.duration">
-                    </div>
-                    <span class="text-sm text-gray-500" id="timeDisplay">0:00 / 0:00</span>
                 </div>
-                <h3 class="font-medium mb-3">Related Videos</h3>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {% for resource in educational_resources %}
-                    <div class="group cursor-pointer">
-                        <div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden mb-2">
-                            {% if resource.thumbnail %}
-                                <img src="{{ resource.thumbnail.url }}" alt="{{ resource.title }}" class="w-full h-full object-cover">
-                            {% else %}
-                                <img src="https://readdy.ai/api/search-image?query={{ resource.title|urlencode }}&width=400&height=225&seq=2&orientation=landscape" alt="{{ resource.title }}" class="w-full h-full object-cover">
-                            {% endif %}
-                            <div class="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <i class="ri-play-fill ri-2x text-white"></i>
-                            </div>
-                        </div>
-                        <h4 class="text-sm font-medium">{{ resource.title }}</h4>
-                        <p class="text-xs text-gray-500">{{ resource.duration }} • {{ resource.source }}</p>
-                    </div>
-                    {% endfor %}
+                <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+                    <h3 class="text-white font-medium">{{ featured_video.title }}</h3>
+                    <p class="text-white/80 text-sm">{{ featured_video.duration|default:"00:00" }} • {{ featured_video.source|default:"Local Upload" }}</p>
                 </div>
-            </div>
+            {% else %}
+                <!-- Fallback if no featured video -->
+                <div class="w-full h-full flex items-center justify-center bg-gray-800 text-white">
+                    <p>No featured video available</p>
+                </div>
+            {% endif %}
         </div>
+
+        <!-- Video Controls (only show if video exists) -->
+        {% if featured_video and featured_video.video_file %}
+        <div class="flex items-center gap-3 mb-6">
+            <button class="w-10 h-10 flex items-center justify-center text-gray-700 hover:bg-gray-100 rounded-full" onclick="mainVideo.currentTime = Math.max(0, mainVideo.currentTime - 10)">
+                <i class="ri-rewind-mini-fill ri-lg"></i>
+            </button>
+            <button class="w-12 h-12 flex items-center justify-center bg-primary text-white rounded-full" onclick="togglePlay()">
+                <i class="ri-play-fill ri-lg"></i>
+            </button>
+            <button class="w-10 h-10 flex items-center justify-center text-gray-700 hover:bg-gray-100 rounded-full" onclick="mainVideo.currentTime = Math.min(mainVideo.duration, mainVideo.currentTime + 10)">
+                <i class="ri-speed-mini-fill ri-lg"></i>
+            </button>
+            <div class="flex-1 ml-2">
+                <input type="range" class="video-progress" min="0" max="100" value="0" onchange="mainVideo.currentTime = (this.value / 100) * mainVideo.duration">
+            </div>
+            <span class="text-sm text-gray-500" id="timeDisplay">0:00 / {{ featured_video.duration|default:"00:00" }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Related Videos -->
+        <h3 class="font-medium mb-3">Related Videos</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {% for resource in educational_resources %}
+                {% if resource.resource_type == 'video' and resource.video_file %}
+                <div class="group cursor-pointer" onclick="changeFeaturedVideo('{{ resource.video_file.url }}', '{{ resource.title }}', '{{ resource.duration|default:"00:00" }}')">
+                    <div class="relative aspect-video bg-gray-200 rounded-lg overflow-hidden mb-2">
+                        {% if resource.thumbnail %}
+                            <img src="{{ resource.thumbnail.url }}" alt="{{ resource.title }}" class="w-full h-full object-cover">
+                        {% else %}
+                            <div class="w-full h-full flex items-center justify-center bg-gray-300">
+                                <i class="ri-video-line ri-3x text-gray-500"></i>
+                            </div>
+                        {% endif %}
+                        <div class="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i class="ri-play-fill ri-2x text-white"></i>
+                        </div>
+                    </div>
+                    <h4 class="text-sm font-medium">{{ resource.title }}</h4>
+                    <p class="text-xs text-gray-500">{{ resource.duration|default:"00:00" }} • {{ resource.source|default:"Local Upload" }}</p>
+                </div>
+                {% endif %}
+            {% empty %}
+                <div class="col-span-3 text-center py-4 text-gray-500">
+                    No video resources available
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+        
+        <script>
+        // Video player functionality
+        let mainVideo = document.getElementById('mainVideo');
+        
+        function togglePlay() {
+            if (mainVideo.paused) {
+                mainVideo.play();
+                document.querySelector('.w-12.h-12.flex.items-center.justify-center.bg-primary i').classList.remove('ri-play-fill');
+                document.querySelector('.w-12.h-12.flex.items-center.justify-center.bg-primary i').classList.add('ri-pause-fill');
+            } else {
+                mainVideo.pause();
+                document.querySelector('.w-12.h-12.flex.items-center.justify-center.bg-primary i').classList.remove('ri-pause-fill');
+                document.querySelector('.w-12.h-12.flex.items-center.justify-center.bg-primary i').classList.add('ri-play-fill');
+            }
+        }
+        
+        function changeFeaturedVideo(videoUrl, title, duration) {
+            mainVideo.src = videoUrl;
+            document.querySelector('.absolute.bottom-0.left-0.right-0.p-4.bg-gradient-to-t.from-black\\/80.to-transparent h3').textContent = title;
+            document.querySelector('.absolute.bottom-0.left-0.right-0.p-4.bg-gradient-to-t.from-black\\/80.to-transparent p').textContent = duration + ' • Local Upload';
+            document.getElementById('duration').textContent = duration;
+            document.getElementById('timeDisplay').textContent = '0:00 / ' + duration;
+            mainVideo.load();
+        }
+        
+        // Update time display
+        if (mainVideo) {
+            mainVideo.addEventListener('timeupdate', function() {
+                const currentMinutes = Math.floor(mainVideo.currentTime / 60);
+                const currentSeconds = Math.floor(mainVideo.currentTime % 60).toString().padStart(2, '0');
+                const durationMinutes = Math.floor(mainVideo.duration / 60);
+                const durationSeconds = Math.floor(mainVideo.duration % 60).toString().padStart(2, '0');
+                
+                document.getElementById('timeDisplay').textContent = `${currentMinutes}:${currentSeconds} / ${durationMinutes}:${durationSeconds}`;
+                
+                const progress = (mainVideo.currentTime / mainVideo.duration) * 100;
+                document.querySelector('.video-progress').value = progress;
+            });
+        }
+        </script>
     </div>
     
     <!-- Right Column - Verification Tools & Products -->
