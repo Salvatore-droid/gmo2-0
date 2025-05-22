@@ -128,7 +128,7 @@ STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
 
-# STATIC_ROOT = BASE_DIR / 'static'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
