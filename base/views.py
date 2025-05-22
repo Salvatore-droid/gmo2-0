@@ -62,16 +62,16 @@ import requests
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
-from .models import ChatMessage  # Your Django model
+from .models import ChatMessage
 
-def get_deepseek_response(user_message, context):
+def get_grok_response(user_message, context):
     """
-    Get a response from DeepSeek's API (JSON-safe format).
+    Get a response from Grok's API (JSON-safe format).
     """
     try:
         # Prepare messages for the API
         messages = [
-            {"role": "system", "content": "You are an expert on GMOs. Provide accurate, science-based answers."},
+            {"role": "system", "content": "You are an expert on GMOs. Provide accurate, science-based answers about genetically modified organisms, agricultural biotechnology, and related regulations."},
         ]
         
         if context.get('last_topic'):
@@ -79,37 +79,51 @@ def get_deepseek_response(user_message, context):
         
         messages.append({"role": "user", "content": user_message})
 
-        # Call DeepSeek API
+        # Call Grok API (replace with actual Grok API endpoint and credentials)
         response = requests.post(
-            "https://api.deepseek.com/v1/chat/completions",  # Verify endpoint
-            headers={"Authorization": "Bearer YOUR_DEEPSEEK_API_KEY"},  # Replace!
+            "https://api.groq.com/openai/v1/chat/completions",  # Verify actual Grok API endpoint
+            headers={
+                "Authorization": "Bearer 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",  # Replace with your Grok API key
+                "Content-Type": "application/json"
+            },
             json={
-                "model": "deepseek-chat",
+                "model": "deepseek-r1-distill-llama-70b",  # Or whatever model name Grok uses
                 "messages": messages,
                 "temperature": 0.7,
                 "max_tokens": 500,
+                "top_p": 0.9,
             },
-            timeout=10  # Avoid hanging
+            timeout=15  # Slightly longer timeout for Grok
         )
+        
+        # Handle potential API errors
+        response.raise_for_status()
         response_data = response.json()
 
-        # Safely extract the answer (adjust based on actual API response)
+        # Safely extract the answer (adjust based on Grok's actual response format)
         answer = response_data.get("choices", [{}])[0].get("message", {}).get("content", "No answer found.")
 
         # Update context (ensure all values are JSON-serializable)
         new_context = {
-            "last_topic": str(user_message[:50])  # Truncate to avoid issues
+            "last_topic": str(user_message[:50]),  # Truncate to avoid issues
+            "conversation_id": response_data.get("conversation_id", "")  # If Grok provides conversation tracking
         }
 
         return {
             "answer": str(answer),  # Force string conversion
             "context": new_context,  # Dict with serializable values
-            "confidence": float(0.8)  # Force float
+            "confidence": float(0.9)  # Confidence score
         }
 
+    except requests.exceptions.RequestException as e:
+        return {
+            "answer": f"API Connection Error: {str(e)}",
+            "context": {},
+            "confidence": 0.1
+        }
     except Exception as e:
         return {
-            "answer": f"API Error: {str(e)}",
+            "answer": f"Processing Error: {str(e)}",
             "context": {},
             "confidence": 0.1
         }
@@ -118,43 +132,65 @@ def get_deepseek_response(user_message, context):
 @login_required
 def chat_api(request):
     """
-    Handle AJAX chat requests (fully JSON-safe).
+    Handle AJAX chat requests with Grok AI integration.
     """
     if request.method == 'POST':
         try:
-            # Parse input data (ensure it's JSON)
+            # Parse input data
             data = json.loads(request.body)
-            user_message = data.get("message", "")
+            user_message = data.get("message", "").strip()
             context = data.get("context", {})
 
-            # Get DeepSeek's response
-            result = get_deepseek_response(user_message, context)
+            if not user_message:
+                return JsonResponse({"error": "Empty message"}, status=400)
 
-            # Save to database (if needed)
+            # Get Grok's response
+            result = get_grok_response(user_message, context)
+
+            # Save to database
             chat_msg = ChatMessage.objects.create(
                 user=request.user,
                 message=user_message,
                 response=result["answer"],
-                context=json.dumps(result["context"])  # Store as JSON string
+                context=json.dumps(result["context"]),
+                is_helpful=None  # Initialize feedback as neutral
             )
 
-            # Return strictly JSON-serializable data
+            # Return response
             return JsonResponse({
-                "response": str(result["answer"]),
-                "context": dict(result["context"]),  # Force dict
-                "message_id": int(chat_msg.id),  # Force int
-                "suggestions": ["GMO safety", "GMO regulations"]  # Simple list
+                "response": result["answer"],
+                "context": result["context"],
+                "message_id": chat_msg.id,
+                "suggestions": get_related_suggestions(user_message)
             })
 
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
         except Exception as e:
-            return JsonResponse(
-                {"error": str(e)},  # Error must be a string
-                status=500
-            )
+            return JsonResponse({"error": str(e)}, status=500)
 
-    return JsonResponse({"error": "Invalid request"}, status=400)
+    return JsonResponse({"error": "Invalid request method"}, status=405)
 
-
+def get_related_suggestions(user_message):
+    """
+    Generate context-aware suggestions based on user message.
+    """
+    suggestions = [
+        "GMO regulations in my country",
+        "How to verify GMO products",
+        "Benefits of GMO crops",
+        "Safety of genetically modified foods"
+    ]
+    
+    # Add more context-aware suggestions based on message content
+    if "seed" in user_message.lower():
+        suggestions.append("How to identify authentic seeds")
+    if "corn" in user_message.lower():
+        suggestions.append("GMO corn varieties")
+    if "regulation" in user_message.lower():
+        suggestions.append("Latest GMO regulations")
+    
+    return suggestions[:4]  # Return max 4 suggestions
 
 @login_required
 def chat_view(request):
@@ -162,32 +198,33 @@ def chat_view(request):
     recent_messages = ChatMessage.objects.filter(user=request.user).order_by('-created_at')[:5]
     return render(request, 'dashboard.html', {
         'recent_messages': recent_messages,
-        'topics': ["GMO Science", "GMO Regulations", "GMO Crops", "GMO Verification"]  # Example topics
+        'topics': ["GMO Science", "GMO Regulations", "GMO Crops", "GMO Verification"]
     })
-
-
-
 
 @csrf_exempt
 @login_required
 def feedback_api(request):
-    """Handle user feedback (simplified since we're not tracking knowledge base confidence)"""
+    """Handle user feedback on responses"""
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
             message_id = data.get('message_id')
             is_helpful = data.get('is_helpful')
             
+            if message_id is None or is_helpful is None:
+                return JsonResponse({'error': 'Missing parameters'}, status=400)
+            
             message = ChatMessage.objects.get(id=message_id, user=request.user)
             message.is_helpful = is_helpful
             message.save()
             
             return JsonResponse({'status': 'success'})
+        except ChatMessage.DoesNotExist:
+            return JsonResponse({'error': 'Message not found'}, status=404)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
     
-    return JsonResponse({'error': 'Invalid request'}, status=400)
-
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
 
 
 
@@ -373,3 +410,10 @@ def verify_product(request, product_id):
             'success': False,
             'error': 'Product not found'
         }, status=404)
+
+
+
+
+
+def quiz(request):
+    return render(request, 'quiz.html')
