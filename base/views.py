@@ -87,7 +87,7 @@ def get_grok_response(user_message, context):
                 "Content-Type": "application/json"
             },
             json={
-                "model": "deepseek-r1-distill-llama-70b",  # Or whatever model name Grok uses
+                "model": "llama-3.1-8b-instant",  # Or whatever model name Grok uses
                 "messages": messages,
                 "temperature": 0.7,
                 "max_tokens": 500,
