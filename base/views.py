@@ -9,11 +9,14 @@ from datetime import datetime
 from django.contrib import messages
 from django.contrib.auth.models import User
 from django.http import Http404
-from .models import Webinar
+from .models import *
 from django.views.decorators.csrf import csrf_exempt
 import openai
 from django.views.generic import DetailView
 import requests  
+
+
+
 
 
 
@@ -53,16 +56,6 @@ def dashboard(request):
         'page_obj': page_obj,
     }
     return render(request, 'dashboard.html', context)
-
-
-
-
-import json
-import requests
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth.decorators import login_required
-from .models import ChatMessage
 
 def get_grok_response(user_message, context):
     """
@@ -170,6 +163,18 @@ def chat_api(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Invalid request method"}, status=405)
+
+
+
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
+
+@login_required
+def verification_page(request):
+    """Render the dedicated verification page"""
+    return render(request, 'verify.html')
+
+
 
 def get_related_suggestions(user_message):
     """
@@ -417,3 +422,9 @@ def verify_product(request, product_id):
 
 def quiz(request):
     return render(request, 'quiz.html')
+
+
+@login_required
+def qr_code_display(request, product_id):
+    product = get_object_or_404(GMOProduct, id=product_id)
+    return render(request, 'qr_code.html', {'product': product})
