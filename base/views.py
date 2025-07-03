@@ -463,7 +463,7 @@ def verify_qr_code(request):
 
 @csrf_exempt
 @login_required
-def verify_product_by_id(request, product_id):
+def verify_product(request, product_id):
     """Handle direct product verification by ID"""
     try:
         product = get_object_or_404(GMOProduct, id=product_id)

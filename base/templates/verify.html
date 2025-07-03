@@ -203,6 +203,7 @@ toggleCameraBtn.addEventListener('click', () => {
 });
 
 // Verify QR code data
+// In your verify.html template, update the verifyQrCode function:
 function verifyQrCode(qrData) {
     // Show loading state
     verificationResult.innerHTML = `
@@ -217,7 +218,7 @@ function verifyQrCode(qrData) {
     verificationResult.classList.remove('hidden');
     
     // Send QR data to server for verification
-    fetch('/verify-product/', {
+    fetch('/verify/qr/', {  // Updated endpoint
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -227,7 +228,12 @@ function verifyQrCode(qrData) {
             qr_data: qrData
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.status === 'success') {
             showVerificationResult(data.product);
@@ -237,7 +243,7 @@ function verifyQrCode(qrData) {
     })
     .catch(error => {
         console.error('Verification error:', error);
-        showVerificationError('Could not connect to verification service');
+        showVerificationError('Could not connect to verification service: ' + error.message);
     });
 }
 
