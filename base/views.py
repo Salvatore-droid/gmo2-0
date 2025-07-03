@@ -390,32 +390,6 @@ class ProductDetailView(DetailView):
 
 
 
-@csrf_exempt  # Only for development - use proper CSRF protection in production
-def verify_product(request, product_id):
-    try:
-        product = GMOProduct.objects.get(id=product_id)
-        
-        # In a real app, you might have more complex verification logic
-        is_verified = product.verification_status == 'verified'
-        certification_valid = bool(product.certification_id)
-        
-        return JsonResponse({
-            'success': True,
-            'verified': is_verified,
-            'certification_valid': certification_valid,
-            'status': product.get_verification_status_display(),
-            'product': {
-                'name': product.name,
-                'company': product.company,
-                'certification_id': product.certification_id,
-            }
-        })
-    except GMOProduct.DoesNotExist:
-        return JsonResponse({
-            'success': False,
-            'error': 'Product not found'
-        }, status=404)
-
 
 
 
@@ -428,3 +402,89 @@ def quiz(request):
 def qr_code_display(request, product_id):
     product = get_object_or_404(GMOProduct, id=product_id)
     return render(request, 'qr_code.html', {'product': product})
+
+@csrf_exempt
+@login_required
+def verify_qr_code(request):
+    """Handle QR code verification"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            qr_data = data.get('qr_data', '')
+            
+            # Parse QR data to find product
+            product = None
+            
+            # Try to find by certification ID first
+            for line in qr_data.split('\n'):
+                if line.startswith('Certification:'):
+                    cert_id = line.split(': ')[1].strip()
+                    if cert_id != 'None':
+                        product = get_object_or_404(GMOProduct, certification_id=cert_id)
+                        break
+            
+            # If not found by certification, try by name
+            if not product:
+                for line in qr_data.split('\n'):
+                    if line.startswith('Name:'):
+                        product_name = line.split(': ')[1].strip()
+                        product = get_object_or_404(GMOProduct, name=product_name)
+                        break
+            
+            if not product:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Product not found in QR code data'
+                }, status=404)
+            
+            response_data = {
+                'status': 'success',
+                'product': {
+                    'id': product.id,
+                    'name': product.name,
+                    'company': product.company,
+                    'crop_type': product.get_crop_type_display(),
+                    'verification_status': product.get_verification_status_display(),
+                    'certification_id': product.certification_id,
+                    'certification_authority': product.certification_authority,
+                    'certification_date': product.certification_date.strftime('%Y-%m-%d') if product.certification_date else None,
+                    'image_url': product.image.url if product.image else None,
+                }
+            }
+            return JsonResponse(response_data)
+            
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': str(e)
+            }, status=400)
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+@login_required
+def verify_product_by_id(request, product_id):
+    """Handle direct product verification by ID"""
+    try:
+        product = get_object_or_404(GMOProduct, id=product_id)
+        
+        is_verified = product.verification_status == 'verified'
+        certification_valid = bool(product.certification_id)
+        
+        return JsonResponse({
+            'success': True,
+            'verified': is_verified,
+            'certification_valid': certification_valid,
+            'status': product.get_verification_status_display(),
+            'product': {
+                'name': product.name,
+                'company': product.company,
+                'certification_id': product.certification_id,
+                'image_url': product.image.url if product.image else None,
+            }
+        })
+    except GMOProduct.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Product not found'
+        }, status=404)
