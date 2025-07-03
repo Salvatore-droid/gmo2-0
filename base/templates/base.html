@@ -419,7 +419,7 @@
             
             if (!verificationCode) return;
             
-            fetch("{% url 'verify_product' %}", {
+            fetch("{% url 'verify_product_by_id' %}", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
