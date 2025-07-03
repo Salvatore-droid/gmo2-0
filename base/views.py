@@ -403,6 +403,8 @@ def qr_code_display(request, product_id):
     product = get_object_or_404(GMOProduct, id=product_id)
     return render(request, 'qr_code.html', {'product': product})
 
+
+    
 @csrf_exempt
 @login_required
 def verify_qr_code(request):
@@ -410,56 +412,88 @@ def verify_qr_code(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            qr_data = data.get('qr_data', '')
+            qr_data = data.get('qr_data', '').strip()
             
-            # Parse QR data to find product
-            product = None
+            if not qr_data:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'QR code data is empty'
+                }, status=400)
             
+            # Initialize default response
+            response_data = {
+                'status': 'error',
+                'message': 'Product not found',
+                'product': None
+            }
+
             # Try to find by certification ID first
             for line in qr_data.split('\n'):
                 if line.startswith('Certification:'):
                     cert_id = line.split(': ')[1].strip()
-                    if cert_id != 'None':
-                        product = get_object_or_404(GMOProduct, certification_id=cert_id)
-                        break
-            
+                    if cert_id and cert_id != 'None':
+                        try:
+                            product = GMOProduct.objects.get(certification_id=cert_id)
+                            response_data = {
+                                'status': 'success',
+                                'product': {
+                                    'id': product.id,
+                                    'name': product.name,
+                                    'company': product.company,
+                                    'crop_type': product.get_crop_type_display(),
+                                    'verification_status': product.get_verification_status_display(),
+                                    'certification_id': product.certification_id,
+                                    'certification_authority': product.certification_authority,
+                                    'certification_date': product.certification_date.strftime('%Y-%m-%d') if product.certification_date else None,
+                                    'image_url': product.image.url if product.image else None,
+                                }
+                            }
+                            return JsonResponse(response_data)
+                        except GMOProduct.DoesNotExist:
+                            continue
+
             # If not found by certification, try by name
-            if not product:
-                for line in qr_data.split('\n'):
-                    if line.startswith('Name:'):
-                        product_name = line.split(': ')[1].strip()
-                        product = get_object_or_404(GMOProduct, name=product_name)
-                        break
+            for line in qr_data.split('\n'):
+                if line.startswith('Name:'):
+                    product_name = line.split(': ')[1].strip()
+                    if product_name:
+                        try:
+                            product = GMOProduct.objects.get(name=product_name)
+                            response_data = {
+                                'status': 'success',
+                                'product': {
+                                    'id': product.id,
+                                    'name': product.name,
+                                    'company': product.company,
+                                    'crop_type': product.get_crop_type_display(),
+                                    'verification_status': product.get_verification_status_display(),
+                                    'certification_id': product.certification_id,
+                                    'certification_authority': product.certification_authority,
+                                    'certification_date': product.certification_date.strftime('%Y-%m-%d') if product.certification_date else None,
+                                    'image_url': product.image.url if product.image else None,
+                                }
+                            }
+                            return JsonResponse(response_data)
+                        except GMOProduct.DoesNotExist:
+                            continue
+
+            return JsonResponse(response_data, status=404)
             
-            if not product:
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Product not found in QR code data'
-                }, status=404)
-            
-            response_data = {
-                'status': 'success',
-                'product': {
-                    'id': product.id,
-                    'name': product.name,
-                    'company': product.company,
-                    'crop_type': product.get_crop_type_display(),
-                    'verification_status': product.get_verification_status_display(),
-                    'certification_id': product.certification_id,
-                    'certification_authority': product.certification_authority,
-                    'certification_date': product.certification_date.strftime('%Y-%m-%d') if product.certification_date else None,
-                    'image_url': product.image.url if product.image else None,
-                }
-            }
-            return JsonResponse(response_data)
-            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Invalid JSON data'
+            }, status=400)
         except Exception as e:
             return JsonResponse({
                 'status': 'error',
                 'message': str(e)
-            }, status=400)
+            }, status=500)
     
-    return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=405)
+    return JsonResponse({
+        'status': 'error',
+        'message': 'Invalid request method'
+    }, status=405)
 
 @csrf_exempt
 @login_required

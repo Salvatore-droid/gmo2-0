@@ -203,7 +203,7 @@ toggleCameraBtn.addEventListener('click', () => {
 });
 
 // Verify QR code data
-// In your verify.html template, update the verifyQrCode function:
+// In your verify.html template
 function verifyQrCode(qrData) {
     // Show loading state
     verificationResult.innerHTML = `
@@ -218,7 +218,7 @@ function verifyQrCode(qrData) {
     verificationResult.classList.remove('hidden');
     
     // Send QR data to server for verification
-    fetch('/verify/qr/', {  // Updated endpoint
+    fetch('/verify/qr/', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -235,7 +235,11 @@ function verifyQrCode(qrData) {
         return response.json();
     })
     .then(data => {
-        if (data.status === 'success') {
+        if (!data) {
+            throw new Error('Empty response from server');
+        }
+        
+        if (data.status === 'success' && data.product) {
             showVerificationResult(data.product);
         } else {
             showVerificationError(data.message || 'Verification failed');
@@ -247,18 +251,12 @@ function verifyQrCode(qrData) {
     });
 }
 
-// Verify manually entered code
-function verifyManualCode() {
-    const manualInput = document.getElementById('manualQrInput').value.trim();
-    if (!manualInput) {
-        alert('Please enter QR code data');
+function showVerificationResult(product) {
+    if (!product) {
+        showVerificationError('Invalid product data');
         return;
     }
-    verifyQrCode(manualInput);
-}
 
-// Show successful verification result
-function showVerificationResult(product) {
     verificationResult.innerHTML = `
         <div class="p-6 border-b border-gray-100">
             <h2 class="text-xl font-bold text-gray-900">Verification Result</h2>
@@ -331,6 +329,18 @@ function showVerificationResult(product) {
         </div>
     `;
 }
+
+// Verify manually entered code
+function verifyManualCode() {
+    const manualInput = document.getElementById('manualQrInput').value.trim();
+    if (!manualInput) {
+        alert('Please enter QR code data');
+        return;
+    }
+    verifyQrCode(manualInput);
+}
+
+
 
 // Show verification error
 function showVerificationError(message) {
